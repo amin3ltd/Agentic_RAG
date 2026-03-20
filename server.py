@@ -606,14 +606,15 @@ class RAGLitAPI(LitAPI):
         Run prediction on the inputs.
         
         This method is called after decode_request() extracts the query from the request body.
-        It executes the appropriate CrewAI workflow based on the mode.
+        It passes the decoded user query to the appropriate CrewAI workflow to generate a response.
         
         Args:
-            inputs: RAGRequest containing query and mode
+            inputs: RAGRequest containing extracted query and mode from decode_request()
         
         Returns:
-            RAGResponse containing the generated response
+            RAGResponse containing the generated response from the model
         """
+        # Extract the user query from the decoded request
         query = inputs.query
         mode = inputs.mode
         
@@ -625,25 +626,30 @@ class RAGLitAPI(LitAPI):
             )
         
         try:
-            print(f"\n🔄 Running {mode} pipeline...")
+            print(f"\n🔄 Running {mode} pipeline with query: {query[:50]}...")
             
+            # Pass the user query to the appropriate CrewAI workflow
+            # Each crew will use the query to retrieve context and generate response
             if mode == "full":
-                # Full pipeline: Research Agent → Writer Agent
+                # Full pipeline: Pass query to Research Agent → Writer Agent workflow
                 result = self.crew.run_full_pipeline(query)
             elif mode == "research":
+                # Research pipeline: Pass query to Research Agent
                 result = self.crew.run_research(query)
             else:
+                # RAG pipeline: Pass query to Retriever Agent → Writer Agent
                 result = self.crew.run_rag(query)
             
-            print(f"✅ Pipeline completed successfully")
+            print(f"✅ Response generated successfully")
             
+            # Return the generated response
             return RAGResponse(
                 query=query,
                 mode=mode,
                 response=str(result)
             )
         except Exception as e:
-            print(f"❌ Error: {str(e)}")
+            print(f"❌ Error generating response: {str(e)}")
             return RAGResponse(
                 query=query,
                 mode=mode,

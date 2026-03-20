@@ -241,18 +241,23 @@ curl -X POST http://localhost:8000/predict \
 ### Request Flow
 
 ```
-Incoming Request
+Incoming Request (with query in body)
        │
        ▼
 ┌──────────────────┐
 │ decode_request() │  ← Extracts query from request body
 └────────┬─────────┘
-         │
+         │ RAGRequest(query, mode)
          ▼
 ┌──────────────────┐
-│   predict()     │  ← Runs CrewAI workflow
+│   predict()     │  ← Passes query to CrewAI workflow
 └────────┬─────────┘
-         │
+         │ query → Crew.kickoff()
+         ▼
+┌──────────────────┐
+│   CrewAI         │  ← Research/Writer agents generate response
+└────────┬─────────┘
+         │ Generated response
          ▼
 ┌──────────────────┐
 │ encode_response()│  ← Formats response
@@ -260,6 +265,27 @@ Incoming Request
          │
          ▼
     Client Response
+```
+
+### How predict() Uses the Crew
+
+The `predict()` method passes the decoded user query to the CrewAI workflow:
+
+```python
+def predict(self, inputs: RAGRequest) -> RAGResponse:
+    # Extract user query from decoded request
+    query = inputs.query
+    mode = inputs.mode
+    
+    # Pass query to CrewAI workflow to generate response
+    if mode == "full":
+        result = self.crew.run_full_pipeline(query)  # Research → Writer
+    elif mode == "research":
+        result = self.crew.run_research(query)        # Research Agent
+    else:
+        result = self.crew.run_rag(query)            # Retriever → Writer
+    
+    return RAGResponse(response=str(result))
 ```
 
 ## Configuration
