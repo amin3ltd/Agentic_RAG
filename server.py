@@ -213,6 +213,55 @@ def create_research_agent_and_task(
 
 
 # ============================================================
+# Writer Agent and Task Definition
+# ============================================================
+
+def create_writer_agent_and_task(llm: LLM) -> tuple[Agent, Task]:
+    """
+    Create the Writer Agent and Task.
+    
+    This Agent accepts the insights from the Research Agent and generates
+    a polished response based on the retrieved context.
+    
+    Args:
+        llm: The language model to use
+    
+    Returns:
+        Tuple of (Agent, Task)
+    """
+    # Create the Writer Agent
+    writer_agent = Agent(
+        role="Writer Agent",
+        goal="Generate a clear, accurate, and helpful response based on the insights from the Research Agent",
+        backstory=(
+            "You are an expert technical writer specializing in crafting clear explanations. "
+            "You take the insights and context provided by the Research Agent and transform them "
+            "into a polished, well-structured response. Your job is to accept the research findings "
+            "and generate a final answer that addresses the user's query comprehensively."
+        ),
+        llm=llm,
+        verbose=True,
+        allow_delegation=False
+    )
+    
+    # Create the Writer Task
+    writer_task = Task(
+        description=(
+            "Generate a final response based on the insights from the Research Agent:\n\n"
+            "1. Review the research findings and context provided.\n"
+            "2. Craft a clear, well-structured answer to the user's query.\n"
+            "3. Ensure the response is accurate, helpful, and cites sources when possible.\n\n"
+            "Input: Research insights and context from the Research Agent\n"
+            "Output: Polished final response"
+        ),
+        expected_output="A clear, accurate, and well-structured response addressing the user's query",
+        agent=writer_agent
+    )
+    
+    return writer_agent, writer_task
+
+
+# ============================================================
 # Crew Orchestration Setup
 # ============================================================
 
@@ -230,14 +279,18 @@ class AgenticRAGCrew:
         # Initialize Ollama LLM
         self.llm = get_ollama_llm()
         
-        # Create agents
+        # Create Retriever Agent
         self.retriever_agent = self._create_retriever_agent()
-        self.writer_agent = self._create_writer_agent()
         
         # Create Research Agent and Task explicitly
         self.research_agent, self.research_task = create_research_agent_and_task(
             vector_db_tool=vector_db_tool,
             web_search_tool=web_search_tool,
+            llm=self.llm
+        )
+        
+        # Create Writer Agent and Task explicitly
+        self.writer_agent, self.writer_task = create_writer_agent_and_task(
             llm=self.llm
         )
     
@@ -252,21 +305,6 @@ class AgenticRAGCrew:
                 "You choose the most appropriate tool based on the query type."
             ),
             tools=self.tools,
-            llm=self.llm,
-            verbose=True,
-            allow_delegation=False
-        )
-    
-    def _create_writer_agent(self) -> Agent:
-        """Create the Writer Agent."""
-        return Agent(
-            role="Writer Agent",
-            goal="Generate a clear, accurate, and helpful response based on the retrieved context",
-            backstory=(
-                "You are an expert writer specializing in technical explanations. "
-                "You take the retrieved context and craft a comprehensive, easy-to-understand response. "
-                "Always cite your sources when possible."
-            ),
             llm=self.llm,
             verbose=True,
             allow_delegation=False
@@ -321,6 +359,49 @@ class AgenticRAGCrew:
         
         result = crew.kickoff()
         return str(result)
+    
+    def run_full_pipeline(self, query: str) -> str:
+        """
+        Run the full pipeline: Research Agent → Writer Agent.
+        
+        The Research Agent retrieves context using vector DB and web search.
+        The Writer Agent then generates a response based on the research insights.
+        """
+        # Create research task
+        research_task = Task(
+            description=(
+                f"Research the following query thoroughly by using both the vector database "
+                f"and web search tools: {query}\n\n"
+                f"1. First, search the vector database for internal knowledge.\n"
+                f"2. Then, search the web for up-to-date information.\n"
+                f"3. Combine the results into a comprehensive answer."
+            ),
+            expected_output="A comprehensive research report combining internal knowledge and web sources",
+            agent=self.research_agent
+        )
+        
+        # Create writer task that uses research context
+        writer_task = Task(
+            description=(
+                f"Based on the research findings below, generate a polished response to the user's query.\n\n"
+                f"User Query: {query}\n\n"
+                f"Research Insights: Use the context from the Research Agent task above.\n"
+                f"Generate a clear, well-structured response that addresses the query."
+            ),
+            expected_output="A clear, accurate, and well-structured response",
+            agent=self.writer_agent,
+            context=[research_task]  # Writer receives insights from Research
+        )
+        
+        # Run crew with both agents
+        crew = Crew(
+            agents=[self.research_agent, self.writer_agent],
+            tasks=[research_task, writer_task],
+            verbose=True
+        )
+        
+        result = crew.kickoff()
+        return str(result)
 
 
 # ============================================================
@@ -344,11 +425,14 @@ class RAGLitAPI(LitAPI):
         1. Vector Database Tool (FAISS-based retrieval)
         2. Firecrawl Web Search Tool
         3. Retriever Agent - chooses best tool for retrieval
-        4. Writer Agent - generates final response
-        5. Research Agent - retrieves from both vector DB and web search
+        4. Research Agent - retrieves from both vector DB and web search
+        5. Writer Agent - generates final response based on research insights
         
         The Research Agent and Task are explicitly defined to accept user queries
         and retrieve context using the vectorDB tool and Firecrawl web search tool.
+        
+        The Writer Agent and Task are explicitly defined to accept insights from
+        the Research Agent and generate a polished response.
         """
         print(f"\n{'='*60}")
         print("Initializing Agentic RAG Pipeline with CrewAI...")
@@ -380,6 +464,12 @@ class RAGLitAPI(LitAPI):
         print(f"   Tools: {[t.name for t in self.crew.research_agent.tools]}")
         print(f"   Task: {self.crew.research_task.description[:100]}...")
         
+        # Explicitly show Writer Agent and Task info
+        print(f"\n📋 Writer Agent Configuration:")
+        print(f"   Role: {self.crew.writer_agent.role}")
+        print(f"   Goal: {self.crew.writer_agent.goal}")
+        print(f"   Task: {self.crew.writer_task.description[:100]}...")
+        
         print(f"\n{'='*60}")
         print("✅ Setup complete!")
         print(f"   LLM: Ollama ({os.getenv('OLLAMA_MODEL', 'qwen3')})")
@@ -393,13 +483,16 @@ class RAGLitAPI(LitAPI):
     def predict(self, inputs: Dict) -> Dict:
         """Run prediction on the inputs."""
         query = inputs.get("query", "")
-        mode = inputs.get("mode", "research")
+        mode = inputs.get("mode", "research")  # "research", "rag", or "full"
         
         if not query:
             return {"error": "Query is required"}
         
         try:
-            if mode == "research":
+            if mode == "full":
+                # Full pipeline: Research Agent → Writer Agent
+                result = self.crew.run_full_pipeline(query)
+            elif mode == "research":
                 result = self.crew.run_research(query)
             else:
                 result = self.crew.run_rag(query)

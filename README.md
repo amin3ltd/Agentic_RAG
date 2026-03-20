@@ -82,6 +82,68 @@ def create_research_agent_and_task(
     return research_agent, research_task
 ```
 
+### Writer Agent (in setup() method)
+
+The Writer Agent is explicitly defined in the `LitServe setup()` method in `server.py`:
+
+```python
+def create_writer_agent_and_task(llm: LLM) -> tuple[Agent, Task]:
+    """
+    Create the Writer Agent and Task.
+    
+    This Agent accepts the insights from the Research Agent and generates
+    a polished response based on the retrieved context.
+    """
+    writer_agent = Agent(
+        role="Writer Agent",
+        goal="Generate a clear, accurate, and helpful response based on the insights from the Research Agent",
+        backstory=(
+            "You are an expert technical writer... "
+            "You take the insights and context provided by the Research Agent and transform them "
+            "into a polished, well-structured response."
+        ),
+        ...
+    )
+    
+    writer_task = Task(
+        description=(
+            "Generate a final response based on the insights from the Research Agent:\n\n"
+            "1. Review the research findings and context provided.\n"
+            "2. Craft a clear, well-structured answer to the user's query.\n"
+            "3. Ensure the response is accurate, helpful, and cites sources when possible."
+        ),
+        ...
+    )
+    
+    return writer_agent, writer_task
+```
+
+### Full Pipeline: Research Agent → Writer Agent
+
+The full pipeline uses both agents sequentially:
+
+```python
+def run_full_pipeline(self, query: str) -> str:
+    # Research Agent retrieves context from vector DB and web search
+    research_task = Task(..., agent=self.research_agent)
+    
+    # Writer Agent generates response based on research insights
+    writer_task = Task(
+        ...,
+        agent=self.writer_agent,
+        context=[research_task]  # Writer receives insights from Research
+    )
+    
+    crew = Crew(
+        agents=[self.research_agent, self.writer_agent],
+        tasks=[research_task, writer_task],
+        verbose=True
+    )
+    
+    result = crew.kickoff()
+    return str(result)
+```
+
 ## Installation
 
 1. Clone the repository:
@@ -134,9 +196,10 @@ The server will start on `http://localhost:8000`
 ```python
 import requests
 
+# Full pipeline: Research Agent → Writer Agent
 response = requests.post("http://localhost:8000/predict", json={
     "query": "What is Retrieval-Augmented Generation?",
-    "mode": "research"  # or "rag"
+    "mode": "full"  # "research", "rag", or "full"
 })
 
 print(response.json())
@@ -145,9 +208,15 @@ print(response.json())
 ### Example cURL
 
 ```bash
+# Full pipeline with both Research and Writer agents
 curl -X POST http://localhost:8000/predict \
   -H "Content-Type: application/json" \
-  -d '{"query": "What is RAG in AI?", "mode": "research"}'
+  -d '{"query": "What is RAG in AI?", "mode": "full"}'
+
+# Research only
+curl -X POST http://localhost:8000/predict \
+  -H "Content-Type: application/json" \
+  -d '{"query": "What is RAG?", "mode": "research"}'
 ```
 
 ## Configuration
