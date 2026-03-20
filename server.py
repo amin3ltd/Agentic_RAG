@@ -658,19 +658,51 @@ class RAGLitAPI(LitAPI):
     
     def encode_response(self, output: RAGResponse) -> Dict:
         """
-        Encode the response for the client.
+        Post-process the response and send it back to the client.
+        
+        This method is called after predict() generates the response.
+        It can be used to:
+        - Format the response for the client
+        - Add metadata
+        - Post-process the generated text
+        - Add caching headers
+        
+        Note: LitServe internally invokes these methods in order:
+              decode_request → predict → encode_response
         
         Args:
-            output: RAGResponse containing the generated response
+            output: RAGResponse containing the generated response from CrewAI
         
         Returns:
-            Dict representation of the response
+            Dict representation of the response to send to client
         """
-        return {
+        # Post-process the response
+        response_text = output.response
+        
+        # Example post-processing:
+        # - Trim whitespace
+        # - Add metadata
+        # - Format JSON
+        
+        # Create the final response dict
+        response_dict = {
             "query": output.query,
             "mode": output.mode,
-            "response": output.response
+            "response": response_text.strip() if response_text else "",
+            "status": "success" if response_text else "empty"
         }
+        
+        # Add additional metadata
+        response_dict["metadata"] = {
+            "response_length": len(response_text) if response_text else 0,
+            "pipeline_mode": output.mode
+        }
+        
+        print(f"\n📤 Sending response to client:")
+        print(f"   Status: {response_dict['status']}")
+        print(f"   Response length: {response_dict['metadata']['response_length']} chars")
+        
+        return response_dict
 
 
 # ============================================================

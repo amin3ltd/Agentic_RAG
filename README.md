@@ -238,7 +238,12 @@ curl -X POST http://localhost:8000/predict \
   -d '{"query": "What is RAG?", "mode": "research"}'
 ```
 
-### Request Flow
+### LitServe Request Flow
+
+LitServe internally invokes these methods in order:
+```
+decode_request → predict → encode_response
+```
 
 ```
 Incoming Request (with query in body)
@@ -260,7 +265,7 @@ Incoming Request (with query in body)
          │ Generated response
          ▼
 ┌──────────────────┐
-│ encode_response()│  ← Formats response
+│ encode_response()│  ← Post-process & format response
 └────────┬─────────┘
          │
          ▼
@@ -286,6 +291,30 @@ def predict(self, inputs: RAGRequest) -> RAGResponse:
         result = self.crew.run_rag(query)            # Retriever → Writer
     
     return RAGResponse(response=str(result))
+```
+
+### encode_response() - Post-process Response
+
+The `encode_response()` method post-processes and formats the response:
+
+```python
+def encode_response(self, output: RAGResponse) -> Dict:
+    # Post-process the response
+    response_text = output.response
+    
+    # Create the final response dict with metadata
+    response_dict = {
+        "query": output.query,
+        "mode": output.mode,
+        "response": response_text.strip(),
+        "status": "success" if response_text else "empty",
+        "metadata": {
+            "response_length": len(response_text),
+            "pipeline_mode": output.mode
+        }
+    }
+    
+    return response_dict
 ```
 
 ## Configuration
