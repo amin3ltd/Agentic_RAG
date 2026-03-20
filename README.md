@@ -347,10 +347,55 @@ To use your own documents, modify the `create_sample_vector_db()` function in `a
 Agentic_RAG/
 ├── app.py              # Core RAG pipeline and tools
 ├── server.py           # LitServe server with Crew orchestration
+├── client.py           # Client code to invoke the API
 ├── requirements.txt    # Python dependencies
 ├── .env.example        # Environment variables template
 ├── .gitignore          # Git ignore patterns
 └── README.md           # This file
+```
+
+## Client Usage
+
+### Basic Usage
+
+```python
+from client import query_rag
+
+# Query with full pipeline
+result = query_rag(
+    query="What is RAG?",
+    mode="full"
+)
+
+print(result["response"])
+```
+
+### Using Convenience Functions
+
+```python
+from client import query_full_pipeline, query_research_only, query_rag_pipeline
+
+# Full pipeline (Research + Writer)
+result = query_full_pipeline("What is RAG?")
+
+# Research only
+result = query_research_only("What is RAG?")
+
+# Standard RAG (Retriever + Writer)
+result = query_rag_pipeline("What is RAG?")
+```
+
+### Command Line Usage
+
+```bash
+# Run with default query
+python client.py
+
+# Run with custom query
+python client.py "What is Retrieval-Augmented Generation?"
+
+# Specify mode
+python client.py "What is RAG?" --mode research
 ```
 
 ## Agents
