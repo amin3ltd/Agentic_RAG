@@ -154,6 +154,65 @@ def create_sample_vector_db() -> VectorDBTool:
 
 
 # ============================================================
+# Research Agent and Task Definition
+# ============================================================
+
+def create_research_agent_and_task(
+    vector_db_tool: VectorDBTool,
+    web_search_tool: FirecrawlWebSearchTool,
+    llm: LLM
+) -> tuple[Agent, Task]:
+    """
+    Create the Research Agent and Task.
+    
+    This Agent accepts the user query and retrieves the relevant context
+    using the vectorDB tool and a web search tool powered by Firecrawl.
+    
+    Args:
+        vector_db_tool: Tool for retrieving context from vector database
+        web_search_tool: Tool for web search using Firecrawl
+        llm: The language model to use
+    
+    Returns:
+        Tuple of (Agent, Task)
+    """
+    # Define the tools available to the Research Agent
+    research_tools = [vector_db_tool, web_search_tool]
+    
+    # Create the Research Agent
+    research_agent = Agent(
+        role="Research Agent",
+        goal="Thoroughly research the user query by retrieving context from both vector database and web search",
+        backstory=(
+            "You are a research specialist who combines multiple sources of information. "
+            "You use both the vector database (for internal knowledge) and web search (for up-to-date information) "
+            "to provide comprehensive answers. Your job is to accept a user query and retrieve "
+            "relevant context using both the vectorDB tool and Firecrawl web search tool."
+        ),
+        tools=research_tools,
+        llm=llm,
+        verbose=True,
+        allow_delegation=False
+    )
+    
+    # Create the Research Task
+    research_task = Task(
+        description=(
+            "Research the given query by using BOTH retrieval tools:\n"
+            "1. Use the Vector Database Retrieval tool to search for internal knowledge.\n"
+            "2. Use the Web Search tool to find up-to-date information from the internet.\n"
+            "3. Combine all results into a comprehensive research report.\n\n"
+            "User Query: {query}\n\n"
+            "Always cite sources when possible."
+        ),
+        expected_output="A comprehensive research report combining internal knowledge from vector DB and up-to-date web sources",
+        agent=research_agent
+    )
+    
+    return research_agent, research_task
+
+
+# ============================================================
 # Crew Orchestration Setup
 # ============================================================
 
@@ -174,7 +233,13 @@ class AgenticRAGCrew:
         # Create agents
         self.retriever_agent = self._create_retriever_agent()
         self.writer_agent = self._create_writer_agent()
-        self.research_agent = self._create_research_agent()
+        
+        # Create Research Agent and Task explicitly
+        self.research_agent, self.research_task = create_research_agent_and_task(
+            vector_db_tool=vector_db_tool,
+            web_search_tool=web_search_tool,
+            llm=self.llm
+        )
     
     def _create_retriever_agent(self) -> Agent:
         """Create the Retriever Agent."""
@@ -202,22 +267,6 @@ class AgenticRAGCrew:
                 "You take the retrieved context and craft a comprehensive, easy-to-understand response. "
                 "Always cite your sources when possible."
             ),
-            llm=self.llm,
-            verbose=True,
-            allow_delegation=False
-        )
-    
-    def _create_research_agent(self) -> Agent:
-        """Create the Research Agent."""
-        return Agent(
-            role="Research Agent",
-            goal="Thoroughly research the user query by retrieving context from both vector database and web search",
-            backstory=(
-                "You are a research specialist who combines multiple sources of information. "
-                "You use both the vector database (for internal knowledge) and web search (for up-to-date information) "
-                "to provide comprehensive answers."
-            ),
-            tools=self.tools,
             llm=self.llm,
             verbose=True,
             allow_delegation=False
@@ -251,6 +300,7 @@ class AgenticRAGCrew:
     def run_research(self, query: str) -> str:
         """Run the research pipeline using both retrieval methods."""
         
+        # Create a task instance with the actual query
         research_task = Task(
             description=(
                 f"Research the following query thoroughly by using both the vector database "
@@ -289,6 +339,16 @@ class RAGLitAPI(LitAPI):
         """
         Setup method - initializes the CrewAI orchestration with all agents and tools.
         This is the main entry point for initializing the pipeline.
+        
+        The setup includes:
+        1. Vector Database Tool (FAISS-based retrieval)
+        2. Firecrawl Web Search Tool
+        3. Retriever Agent - chooses best tool for retrieval
+        4. Writer Agent - generates final response
+        5. Research Agent - retrieves from both vector DB and web search
+        
+        The Research Agent and Task are explicitly defined to accept user queries
+        and retrieve context using the vectorDB tool and Firecrawl web search tool.
         """
         print(f"\n{'='*60}")
         print("Initializing Agentic RAG Pipeline with CrewAI...")
@@ -299,19 +359,26 @@ class RAGLitAPI(LitAPI):
         print("📦 Creating vector database tool...")
         self.vector_db_tool = create_sample_vector_db()
         
-        print("🌐 Creating web search tool...")
+        print("🌐 Creating web search tool (Firecrawl)...")
         self.web_search_tool = FirecrawlWebSearchTool()
         
-        # Create Crew orchestration
+        # Create Crew orchestration with all agents
         print("🤖 Setting up CrewAI agents...")
-        print("   - Retriever Agent")
-        print("   - Writer Agent")
-        print("   - Research Agent")
+        print("   - Retriever Agent (chooses vector DB or web search)")
+        print("   - Writer Agent (generates response)")
+        print("   - Research Agent (uses both vector DB + web search)")
         
         self.crew = AgenticRAGCrew(
             vector_db_tool=self.vector_db_tool,
             web_search_tool=self.web_search_tool
         )
+        
+        # Explicitly show Research Agent and Task info
+        print(f"\n📋 Research Agent Configuration:")
+        print(f"   Role: {self.crew.research_agent.role}")
+        print(f"   Goal: {self.crew.research_agent.goal}")
+        print(f"   Tools: {[t.name for t in self.crew.research_agent.tools]}")
+        print(f"   Task: {self.crew.research_task.description[:100]}...")
         
         print(f"\n{'='*60}")
         print("✅ Setup complete!")

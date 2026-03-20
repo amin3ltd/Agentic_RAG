@@ -17,7 +17,16 @@ A powerful Retrieval-Augmented Generation (RAG) pipeline with agentic capabiliti
 │                      User Query                              │
 └─────────────────────┬───────────────────────────────────────┘
                       │
-                      ▼
+          ┌───────────┴───────────┐
+          │                       │
+          ▼                       ▼
+┌─────────────────┐     ┌─────────────────────┐
+│  RAG Pipeline   │     │  Research Pipeline  │
+│  (retriever +   │     │  (Research Agent    │
+│   writer)       │     │   uses both tools) │
+└────────┬────────┘     └──────────┬──────────┘
+         │                         │
+         ▼                         ▼
 ┌─────────────────────────────────────────────────────────────┐
 │                   Retriever Agent                            │
 │         (Chooses best tool: Vector DB or Web Search)        │
@@ -36,6 +45,41 @@ A powerful Retrieval-Augmented Generation (RAG) pipeline with agentic capabiliti
 │                    Writer Agent                              │
 │              (Generates final response)                      │
 └─────────────────────────────────────────────────────────────┘
+```
+
+### Research Agent (in setup() method)
+
+The Research Agent is explicitly defined in the `LitServe setup()` method in `server.py`:
+
+```python
+def create_research_agent_and_task(
+    vector_db_tool: VectorDBTool,
+    web_search_tool: FirecrawlWebSearchTool,
+    llm: LLM
+) -> tuple[Agent, Task]:
+    """
+    Create the Research Agent and Task.
+    
+    This Agent accepts the user query and retrieves the relevant context
+    using the vectorDB tool and a web search tool powered by Firecrawl.
+    """
+    research_agent = Agent(
+        role="Research Agent",
+        goal="Thoroughly research the user query by retrieving context from both vector database and web search",
+        ...
+    )
+    
+    research_task = Task(
+        description=(
+            "Research the given query by using BOTH retrieval tools:\n"
+            "1. Use the Vector Database Retrieval tool...\n"
+            "2. Use the Web Search tool...\n"
+            "3. Combine all results into a comprehensive research report.\n"
+        ),
+        ...
+    )
+    
+    return research_agent, research_task
 ```
 
 ## Installation
