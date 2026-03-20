@@ -415,6 +415,10 @@ class RAGLitAPI(LitAPI):
         self.crew = None
         self.vector_db_tool = None
         self.web_search_tool = None
+        # Crew instances for orchestration
+        self.research_crew = None
+        self.rag_crew = None
+        self.full_research_crew = None
     
     def setup(self, device: str = "cuda"):
         """
@@ -433,6 +437,11 @@ class RAGLitAPI(LitAPI):
         
         The Writer Agent and Task are explicitly defined to accept insights from
         the Research Agent and generate a polished response.
+        
+        CrewAI Crew Orchestration:
+        - Research Crew: Research Agent for context retrieval
+        - RAG Crew: Retriever + Writer agents
+        - Full Research Crew: Research + Writer agents for complete workflow
         """
         print(f"\n{'='*60}")
         print("Initializing Agentic RAG Pipeline with CrewAI...")
@@ -470,10 +479,45 @@ class RAGLitAPI(LitAPI):
         print(f"   Goal: {self.crew.writer_agent.goal}")
         print(f"   Task: {self.crew.writer_task.description[:100]}...")
         
+        # ============================================================
+        # Create CrewAI Crews (Orchestration)
+        # ============================================================
+        print(f"\n🚀 Setting up CrewAI Crews (Orchestration)...")
+        
+        # Crew 1: Research Crew (Research Agent only)
+        self.research_crew = Crew(
+            agents=[self.crew.research_agent],
+            tasks=[self.crew.research_task],
+            verbose=True
+        )
+        print("   ✓ Research Crew created (Research Agent)")
+        
+        # Crew 2: RAG Crew (Retriever + Writer)
+        self.rag_crew = Crew(
+            agents=[self.crew.retriever_agent, self.crew.writer_agent],
+            tasks=[],  # Tasks are created dynamically in run_rag
+            verbose=True
+        )
+        print("   ✓ RAG Crew created (Retriever + Writer Agents)")
+        
+        # Crew 3: Full Research Crew (Research + Writer)
+        self.full_research_crew = Crew(
+            agents=[self.crew.research_agent, self.crew.writer_agent],
+            tasks=[],  # Tasks are created dynamically in run_full_pipeline
+            verbose=True
+        )
+        print("   ✓ Full Research Crew created (Research + Writer Agents)")
+        
+        print(f"\n📋 Crew Configuration:")
+        print(f"   Research Crew: {len(self.research_crew.agents)} agent(s), {len(self.research_crew.tasks)} task(s)")
+        print(f"   RAG Crew: {len(self.rag_crew.agents)} agent(s)")
+        print(f"   Full Research Crew: {len(self.full_research_crew.agents)} agent(s)")
+        
         print(f"\n{'='*60}")
         print("✅ Setup complete!")
         print(f"   LLM: Ollama ({os.getenv('OLLAMA_MODEL', 'qwen3')})")
         print(f"   Tools: {[tool.name for tool in self.crew.tools]}")
+        print(f"   Crews: Research, RAG, Full Research")
         print(f"{'='*60}\n")
     
     def decode_request(self, request: Any) -> Dict:

@@ -262,14 +262,50 @@ Agentic_RAG/
 - **Goal**: Retrieve relevant context by choosing the best available tool
 - **Tools**: Vector DB, Web Search
 
-### Writer Agent
-- **Role**: Technical Writer
-- **Goal**: Generate clear, accurate responses from retrieved context
-
 ### Research Agent
 - **Role**: Research Specialist
 - **Goal**: Combine multiple sources for comprehensive answers
 - **Tools**: Vector DB, Web Search
+
+### Writer Agent
+- **Role**: Technical Writer
+- **Goal**: Generate clear, accurate responses from research insights
+
+## Crew Orchestration
+
+The CrewAI crews are set up in the `setup()` method:
+
+```python
+def setup(self, device: str = "cuda"):
+    # ... initialize agents ...
+    
+    # Create CrewAI Crews (Orchestration)
+    # Crew 1: Research Crew (Research Agent only)
+    self.research_crew = Crew(
+        agents=[self.crew.research_agent],
+        tasks=[self.crew.research_task],
+        verbose=True
+    )
+    
+    # Crew 2: RAG Crew (Retriever + Writer)
+    self.rag_crew = Crew(
+        agents=[self.crew.retriever_agent, self.crew.writer_agent],
+        tasks=[],
+        verbose=True
+    )
+    
+    # Crew 3: Full Research Crew (Research + Writer)
+    self.full_research_crew = Crew(
+        agents=[self.crew.research_agent, self.crew.writer_agent],
+        tasks=[],
+        verbose=True
+    )
+```
+
+### Available Crews:
+- **Research Crew**: Uses Research Agent for context retrieval
+- **RAG Crew**: Uses Retriever + Writer agents
+- **Full Research Crew**: Uses Research + Writer agents for complete workflow
 
 ## Tech Stack
 
