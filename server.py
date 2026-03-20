@@ -13,8 +13,49 @@ from sentence_transformers import SentenceTransformer
 from crewai import Agent, Task, Crew
 from crewai.tools import BaseTool
 from crewai.llm import LLM
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, validator
 from litserve import LitAPI, LitServer
+
+
+# ============================================================
+# Request/Response Models
+# ============================================================
+
+class RAGRequest(BaseModel):
+    """Request model for the RAG pipeline."""
+    query: str = Field(..., description="The user's question or query")
+    mode: str = Field(default="research", description="Pipeline mode: 'research', 'rag', or 'full'")
+    
+    @validator('mode')
+    def validate_mode(cls, v):
+        allowed_modes = ['research', 'rag', 'full']
+        if v not in allowed_modes:
+            raise ValueError(f'mode must be one of {allowed_modes}')
+        return v
+    
+    class Config:
+        schema_extra = {
+            "example": {
+                "query": "What is Retrieval-Augmented Generation?",
+                "mode": "full"
+            }
+        }
+
+
+class RAGResponse(BaseModel):
+    """Response model for the RAG pipeline."""
+    query: str = Field(..., description="The original user query")
+    mode: str = Field(..., description="The pipeline mode used")
+    response: str = Field(..., description="The generated response")
+    
+    class Config:
+        schema_extra = {
+            "example": {
+                "query": "What is RAG?",
+                "mode": "full",
+                "response": "Retrieval-Augmented Generation (RAG) is..."
+            }
+        }
 
 load_dotenv()
 
@@ -520,19 +561,72 @@ class RAGLitAPI(LitAPI):
         print(f"   Crews: Research, RAG, Full Research")
         print(f"{'='*60}\n")
     
-    def decode_request(self, request: Any) -> Dict:
-        """Decode the incoming request."""
-        return request
+    def decode_request(self, request: Any) -> RAGRequest:
+        """
+        Decode the incoming request and extract user query.
+        
+        Expected request body format:
+        {
+            "query": "user's question",
+            "mode": "research" | "rag" | "full"  (optional, defaults to "research")
+        }
+        
+        Args:
+            request: The incoming request (dict or object)
+        
+        Returns:
+            RAGRequest containing extracted query and mode
+        """
+        # Handle both dict and object requests
+        if hasattr(request, 'json'):
+            # It's a FastAPI/Starlette request object
+            try:
+                body = request.json()
+            except:
+                body = {}
+        elif isinstance(request, dict):
+            body = request
+        else:
+            body = {}
+        
+        # Validate and create RAGRequest model
+        try:
+            rag_request = RAGRequest(**body)
+            print(f"\n📥 Request received:")
+            print(f"   Query: {rag_request.query[:50]}..." if len(rag_request.query) > 50 else f"   Query: {rag_request.query}")
+            print(f"   Mode: {rag_request.mode}")
+            return rag_request
+        except Exception as e:
+            # Return default request if validation fails
+            print(f"\n⚠️ Request validation warning: {e}")
+            return RAGRequest(query=body.get("query", ""), mode=body.get("mode", "research"))
     
-    def predict(self, inputs: Dict) -> Dict:
-        """Run prediction on the inputs."""
-        query = inputs.get("query", "")
-        mode = inputs.get("mode", "research")  # "research", "rag", or "full"
+    def predict(self, inputs: RAGRequest) -> RAGResponse:
+        """
+        Run prediction on the inputs.
+        
+        This method is called after decode_request() extracts the query from the request body.
+        It executes the appropriate CrewAI workflow based on the mode.
+        
+        Args:
+            inputs: RAGRequest containing query and mode
+        
+        Returns:
+            RAGResponse containing the generated response
+        """
+        query = inputs.query
+        mode = inputs.mode
         
         if not query:
-            return {"error": "Query is required"}
+            return RAGResponse(
+                query="",
+                mode=mode,
+                response=""
+            )
         
         try:
+            print(f"\n🔄 Running {mode} pipeline...")
+            
             if mode == "full":
                 # Full pipeline: Research Agent → Writer Agent
                 result = self.crew.run_full_pipeline(query)
@@ -541,21 +635,36 @@ class RAGLitAPI(LitAPI):
             else:
                 result = self.crew.run_rag(query)
             
-            return {
-                "query": query,
-                "mode": mode,
-                "response": result
-            }
+            print(f"✅ Pipeline completed successfully")
+            
+            return RAGResponse(
+                query=query,
+                mode=mode,
+                response=str(result)
+            )
         except Exception as e:
-            return {
-                "query": query,
-                "mode": mode,
-                "error": str(e)
-            }
+            print(f"❌ Error: {str(e)}")
+            return RAGResponse(
+                query=query,
+                mode=mode,
+                response=f"Error: {str(e)}"
+            )
     
-    def encode_response(self, output: Dict) -> Any:
-        """Encode the response."""
-        return output
+    def encode_response(self, output: RAGResponse) -> Dict:
+        """
+        Encode the response for the client.
+        
+        Args:
+            output: RAGResponse containing the generated response
+        
+        Returns:
+            Dict representation of the response
+        """
+        return {
+            "query": output.query,
+            "mode": output.mode,
+            "response": output.response
+        }
 
 
 # ============================================================

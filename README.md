@@ -191,6 +191,25 @@ The server will start on `http://localhost:8000`
 - `POST /predict` - Run the RAG pipeline
 - `GET /health` - Health check
 
+### Request/Response Format
+
+#### Request Body
+```json
+{
+    "query": "Your question here",
+    "mode": "research" | "rag" | "full"
+}
+```
+
+#### Response Body
+```json
+{
+    "query": "Your question here",
+    "mode": "full",
+    "response": "Generated response..."
+}
+```
+
 ### Example Request
 
 ```python
@@ -217,6 +236,30 @@ curl -X POST http://localhost:8000/predict \
 curl -X POST http://localhost:8000/predict \
   -H "Content-Type: application/json" \
   -d '{"query": "What is RAG?", "mode": "research"}'
+```
+
+### Request Flow
+
+```
+Incoming Request
+       │
+       ▼
+┌──────────────────┐
+│ decode_request() │  ← Extracts query from request body
+└────────┬─────────┘
+         │
+         ▼
+┌──────────────────┐
+│   predict()     │  ← Runs CrewAI workflow
+└────────┬─────────┘
+         │
+         ▼
+┌──────────────────┐
+│ encode_response()│  ← Formats response
+└────────┬─────────┘
+         │
+         ▼
+    Client Response
 ```
 
 ## Configuration
