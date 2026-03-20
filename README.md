@@ -12,6 +12,8 @@ A powerful Retrieval-Augmented Generation (RAG) pipeline with agentic capabiliti
 
 ## Architecture
 
+![Agentic RAG Architecture](images/architecture.png)
+
 ```
 ┌─────────────────────────────────────────────────────────────┐
 │                      User Query                              │
